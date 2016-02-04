@@ -290,6 +290,7 @@ exports.addInfo = function(api_key, data, callback) {
 	});
 	multi.sadd([data.actorID, api_key]);
 	async.forEachOf(data.accounting, function(acc, p, task_callback) {
+		//console.log(acc)
 		multi.sadd([api_key + '_paths', p]);
 		multi.hmset(data.actorID + api_key + p, {
 			'actorID': data.actorID,
@@ -323,7 +324,7 @@ exports.getApiKey = function(user, offer, callback) {
 						return callback(err, null);
 					} else if (offerAcc['organization'] === offer['organization'] &&
 						offerAcc['name'] === offer['name'] &&
-						offerAcc['version'] === offer['version']) {
+						offerAcc['version'] == offer['version']) {
 							task_callback(true);
 					} else {
 						task_callback(false);
@@ -337,6 +338,8 @@ exports.getApiKey = function(user, offer, callback) {
 				}
 				
 			});
+		} else {
+			return callback(null, null);
 		}
 	});
 };

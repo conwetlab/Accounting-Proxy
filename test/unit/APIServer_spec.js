@@ -22,7 +22,8 @@ var mocker = function(implementations, callback) {
 		logger: {
 			log: sinon.spy(log_mock, 'log'),
 			warn: sinon.spy(log_mock, 'warn')
-		}
+		},
+		validation: {}
 	};
 	// Define default mockers
 	mocks = {
@@ -38,6 +39,7 @@ var mocker = function(implementations, callback) {
 		url: {},
 		config: {},
 		async: {},
+		validation: {},
 		logger: {
 			Logger: function(transports) {
 				return log_mock;
@@ -70,6 +72,7 @@ var mocker = function(implementations, callback) {
 			'./db': mocks.db,
 			'url': mocks.url,
 			'winston': mocks.logger,
+			'./validation': mocks.validation,
 			'async': mocks.async
 		});
 		return callback(api_server, spies);
@@ -114,7 +117,7 @@ describe('Testing APIServer', function() {
 					status: function(stat) {
 						return this;
 					},
-					send: function() {}
+					json: function(msg) {}
 				},
 				config: {
 					database: './db'
@@ -128,7 +131,7 @@ describe('Testing APIServer', function() {
 			mocker(implementations, function(api_server, spies) {
 				assert.equal(spies.req.get.callCount, 1);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.res.status.getCall(0).args[0], 400);
 				done();
 			});
@@ -145,7 +148,7 @@ describe('Testing APIServer', function() {
 					status: function(stat) {
 						return this;
 					},
-					send: function() {}
+					json: function(msg) {}
 				},
 				db: {
 					getInfo: function(user, callback) {
@@ -164,7 +167,7 @@ describe('Testing APIServer', function() {
 			mocker(implementations, function(api_server, spies) {
 				assert.equal(spies.req.get.callCount, 1);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.res.status.getCall(0).args[0], 400);
 				done();
 			});
@@ -303,6 +306,11 @@ describe('Testing APIServer', function() {
 						return;
 					}
 				}
+			},
+			validation: {
+				validate: function(type, body, callback) {
+					return callback('Error');
+				}
 			}
 		}
 
@@ -311,13 +319,13 @@ describe('Testing APIServer', function() {
 				status: function(stat) {
 					return this;
 				},
-				send: function() {}
+				json: function(msg) {}
 			}
 
 			mocker(implementations, function(api_server, spies) {
 				assert.equal(spies.logger.log.callCount, 1);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.res.status.getCall(0).args[0], 415);
 				assert.equal(spies.logger.log.getCall(0).args[0], 'debug');
 				assert.equal(spies.logger.log.getCall(0).args[1], 'New resource notification recieved');
@@ -337,17 +345,17 @@ describe('Testing APIServer', function() {
 				status: function(stat) {
 					return this;
 				},
-				send: function() {}
+				json: function(msg) {}
 			}
 			mocker(implementations, function(api_server, spies) {
 				assert.equal(spies.logger.log.callCount, 1);
-				assert.equal(spies.req.setEncoding.callCount, 1);
+				assert.equal(spies.req.setEncoding.callCount, 0);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.logger.log.getCall(0).args[0], 'debug');
 				assert.equal(spies.logger.log.getCall(0).args[1], 'New resource notification recieved');
-				assert.equal(spies.req.setEncoding.getCall(0).args[0], 'utf-8');
 				assert.equal(spies.res.status.getCall(0).args[0], 400);
+				assert.deepEqual(spies.res.json.getCall(0).args[0], { error: 'Invalid json' })
 				done();
 			});
 		});
@@ -355,15 +363,19 @@ describe('Testing APIServer', function() {
 		it('error (400), no service available', function(done) {
 			implementations.req = {
 				body: {
-					record_type: 'rec_type',
-					unit: 'megabyte',
-					component_label: 'com_label',
-					url: 'http://localhost/path',
 					offering: {
 						organization: 'org',
 						name: 'name',
-						version: 1.0
-					}
+						version: '1.0'
+					},
+					provider: 'provider',
+					name: 'resource',
+					version: '1.0',
+					content_type: 'application/json',
+					url: 'http://localhost/path',
+					record_type: 'rec_type',
+					unit: 'megabyte',
+					component_label: 'com_label'
 				},
 				is: function(type) {
 					return true;
@@ -374,19 +386,22 @@ describe('Testing APIServer', function() {
 				status: function(stat) {
 					return this;
 				},
-				send: function() {}
+				json: function(msg) {}
+			}
+			implementations.validation.validate = function(type, body, callback) {
+				return callback(null);
 			}
 			mocker(implementations, function(api_server, spies) {
 				assert.equal(spies.logger.log.callCount, 1);
 				assert.equal(spies.req.setEncoding.callCount, 1);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.db.getService.callCount, 1);
 				assert.equal(spies.logger.log.getCall(0).args[0], 'debug');
 				assert.equal(spies.logger.log.getCall(0).args[1], 'New resource notification recieved');
-				assert.equal(spies.req.setEncoding.getCall(0).args[0], 'utf-8');
 				assert.equal(spies.db.getService.getCall(0).args[0], '/path');
 				assert.equal(spies.res.status.getCall(0).args[0], 400);
+				assert.deepEqual(spies.res.json.getCall(0).args[0], { error: 'Invalid path in the url specified in the body' })
 				done();
 			});
 		});
@@ -398,7 +413,7 @@ describe('Testing APIServer', function() {
 				status: function(stat) {
 					return this;
 				},
-				send: function() {}
+				json: function(msg) {}
 			}
 			implementations.db.getService = function(publicPath, callback) {
 				return callback(null, {});
@@ -414,14 +429,14 @@ describe('Testing APIServer', function() {
 				assert.equal(spies.logger.log.callCount, 1);
 				assert.equal(spies.req.setEncoding.callCount, 1);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.db.getService.callCount, 1);
 				assert.equal(spies.logger.log.getCall(0).args[0], 'debug');
 				assert.equal(spies.logger.log.getCall(0).args[1], 'New resource notification recieved');
 				assert.equal(spies.req.setEncoding.getCall(0).args[0], 'utf-8');
 				assert.equal(spies.db.getService.getCall(0).args[0], '/path');
 				assert.equal(spies.res.status.getCall(0).args[0], 400);
-				assert.equal(spies.res.send.getCall(0).args[0], 'Unsupported accounting unit.');
+				assert.deepEqual(spies.res.json.getCall(0).args[0], { error: 'Unsupported accounting unit' });
 				done();
 			});
 		});
@@ -433,6 +448,7 @@ describe('Testing APIServer', function() {
 				status: function(stat) {
 					return this;
 				},
+				json: function(msg) {},
 				send: function() {}
 			}
 			implementations.db.addResource = function(resource, callback) {
@@ -470,7 +486,8 @@ describe('Testing APIServer', function() {
 				status: function(stat) {
 					return this;
 				},
-				send: function() {}
+				send: function() {},
+				json: function(msg) {}
 			}
 			implementations.db.addResource = function(resource, callback) {
 				return callback(null);
@@ -504,7 +521,7 @@ describe('Testing APIServer', function() {
 				status: function(status) {
 					return this;
 				},
-				send: function() {}
+				json: function(msg) {}
 			},
 			req: {
 				setEncoding: function(encoding) {},
@@ -512,13 +529,18 @@ describe('Testing APIServer', function() {
 					offering: {
 						organization: 'org',
 						name: 'name',
-						version: 1.0
+						version: '1.0'
 					},
-					resources: [{
-
-					}],
 					customer: '0001',
-					reference: 'ref'
+					reference: 'ref',
+					customer_name: 'customer_name',
+					resources: [{
+						provider: 'provider',
+						name: 'name',
+						version: '1.0',
+						content_type: 'application/json',
+						url: 'http://localhost/private'
+					}]
 				}
 			},
 			db: {
@@ -553,10 +575,11 @@ describe('Testing APIServer', function() {
 			mocker(implementations, function(api_server, spies) {
 				assert.equal(spies.logger.log.callCount, 1);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.logger.log.getCall(0).args[0], 'debug');
 				assert.equal(spies.logger.log.getCall(0).args[1], 'WStore notification recieved');
 				assert.equal(spies.res.status.getCall(0).args[0], 415);
+				assert.deepEqual(spies.res.json.getCall(0).args[0], { error: 'Content-Type must be "application/json"' });
 				done();
 			});
 		});
@@ -635,7 +658,7 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 500);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				done();
 			});
@@ -671,7 +694,7 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 500);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				assert.equal(spies.db.getUnit.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getUnit.getCall(0).args[1], 'org');
@@ -688,6 +711,7 @@ describe('Testing APIServer', function() {
 				status: function(stat) {
 					return this;
 				},
+				json: function(msg) {},
 				send: function() {}
 			}
 			implementations.db.getUnit = function(path, organization, name, version, callback) {
@@ -697,7 +721,7 @@ describe('Testing APIServer', function() {
 				assert.equal(spies.logger.log.callCount, 2);
 				assert.equal(spies.req.setEncoding.callCount, 1);
 				assert.equal(spies.res.status.callCount, 1);
-				assert.equal(spies.res.send.callCount, 1);
+				assert.equal(spies.res.json.callCount, 1);
 				assert.equal(spies.db.getApiKey.callCount, 1);
 				assert.equal(spies.db.checkBuy.callCount, 1);
 				assert.equal(spies.async.each.callCount, 1);
@@ -710,12 +734,13 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 400);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				assert.equal(spies.db.getUnit.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getUnit.getCall(0).args[1], 'org');
 				assert.equal(spies.db.getUnit.getCall(0).args[2], 'name');
 				assert.equal(spies.db.getUnit.getCall(0).args[3], 1);
+				assert.deepEqual(spies.res.json.getCall(0).args[0], { error: 'Invalid path in the resource' });
 				done();
 			});
 		});
@@ -750,7 +775,7 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 500);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				assert.equal(spies.db.getUnit.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getUnit.getCall(0).args[1], 'org');
@@ -794,7 +819,7 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 400);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				assert.equal(spies.db.getUnit.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getUnit.getCall(0).args[1], 'org');
@@ -802,7 +827,7 @@ describe('Testing APIServer', function() {
 				assert.equal(spies.db.getUnit.getCall(0).args[3], 1);
 				assert.equal(spies.db.getService.getCall(0).args[0], '/path');
 				assert.equal(spies.db.addInfo.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b' );
+					'f57e57d177053151a6a3ff789cb33b7748edbd65' );
 				assert.deepEqual(spies.db.addInfo.getCall(0).args[1], {
 			        accounting: {
 			          	"/path": {
@@ -856,7 +881,7 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 201);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				assert.equal(spies.db.getUnit.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getUnit.getCall(0).args[1], 'org');
@@ -864,7 +889,7 @@ describe('Testing APIServer', function() {
 				assert.equal(spies.db.getUnit.getCall(0).args[3], 1);
 				assert.equal(spies.db.getService.getCall(0).args[0], '/path');
 				assert.equal(spies.db.addInfo.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b' );
+					'f57e57d177053151a6a3ff789cb33b7748edbd65' );
 				assert.deepEqual(spies.db.addInfo.getCall(0).args[1], {
 			        accounting: {
 			          	"/path": {
@@ -916,7 +941,7 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 500);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				assert.equal(spies.db.getUnit.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getUnit.getCall(0).args[1], 'org');
@@ -924,7 +949,7 @@ describe('Testing APIServer', function() {
 				assert.equal(spies.db.getUnit.getCall(0).args[3], 1);
 				assert.equal(spies.db.getService.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getNotificationInfo.getCall(0).args[0], 
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.getNotificationInfo.getCall(0).args[1], '/path'); 
 				done();
 			});
@@ -962,7 +987,7 @@ describe('Testing APIServer', function() {
 				assert.deepEqual(spies.db.getApiKey.getCall(0).args[1], implementations.req.body.offering);
 				assert.equal(spies.res.status.getCall(0).args[0], 201);
 				assert.equal(spies.db.checkBuy.getCall(0).args[0],
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.checkBuy.getCall(0).args[1], '/path' );
 				assert.equal(spies.db.getUnit.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getUnit.getCall(0).args[1], 'org');
@@ -970,7 +995,7 @@ describe('Testing APIServer', function() {
 				assert.equal(spies.db.getUnit.getCall(0).args[3], 1);
 				assert.equal(spies.db.getService.getCall(0).args[0], '/path');
 				assert.equal(spies.db.getNotificationInfo.getCall(0).args[0], 
-					'46ac43d8c7d9a9c8cb65f7e81e0477b0f6c6a03b');
+					'f57e57d177053151a6a3ff789cb33b7748edbd65');
 				assert.equal(spies.db.getNotificationInfo.getCall(0).args[1], '/path'); 
 				done();
 			});

@@ -124,6 +124,8 @@ exports.getService = function(path, callback) {
             }, function(err, service) {
                 if (err) {
                     return callback(err, null);
+                } else if (service[0] == undefined){
+                    return callback(null, null);
                 } else {
                     return callback(null, service[0]);
                 }
